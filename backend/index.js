@@ -27,13 +27,14 @@ const userSchema = new mongoose.Schema({
   isVerified: { type: Boolean, default: false }, // Email verification status
   gender: { type: String, required: false },
   dateOfBirth: { type: Date, required: false },
-  isStudentOrWorking: { type: String, enum: ["Student", "Working"], required: false },
+  isStudentOrWorking: { type: String, enum: ["Student", "Employed", "Not Employed"], required: false },
   highestEducationLevel: { type: String, required: false },
   trackAppliedFor: { type: String, enum: ["Product Design", "Front-end", "Data Analysis"], required: false },
   reliableInternetConnection: { type: String, enum: ["Yes", "No"], required: false },
   accessibilityNeeds: { type: String, enum: ["Yes", "No"], required: false },
   country: { type: String, required: false },
   state: { type: String, required: false },
+  city: { type: String, required: false },
   hearAboutUs: { type: String, required: false },
   admissionNumber: { type: String, required: false, unique: true },
 });
@@ -54,8 +55,9 @@ const transporter = nodemailer.createTransport({
 const generateAdmissionNumber = async () => {
   const year = new Date().getFullYear();
   const prefix = "I2I";
-  const count = await User.countDocuments();
-  return `${prefix}${year}${String(count + 1).padStart(4, "0")}`;
+  // const count = await User.countDocuments();
+  const rand = Math.floor(100000 + Math.random() * 900000).toString().slice(-4); // 4-digit random number
+  return `${prefix}${year}${String(rand).padStart(4, "0")}`;
 };
 
 const generateVerificationCode = () => {
@@ -150,6 +152,7 @@ app.put("/api/users/details/:email", async (req, res) => {
       accessibilityNeeds,
       country,
       state,
+      city,
       hearAboutUs
     } = req.body;
 
@@ -169,6 +172,7 @@ app.put("/api/users/details/:email", async (req, res) => {
     user.accessibilityNeeds = accessibilityNeeds;
     user.country = country;
     user.state = state;
+    user.city = city;
     user.hearAboutUs = hearAboutUs;
 
     await user.save();
