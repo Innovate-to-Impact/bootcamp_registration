@@ -23,6 +23,9 @@ const userSchema = new mongoose.Schema({
   lastName: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   phone: { type: String, required: true },
+  hasLaptop: { type: String, required: true, enum: ["Yes", "No"] },
+  motivationLetter: { type: String, required: true, minlength: 150 },
+  isCommitted: { type: Boolean, required: true },
   verificationCode: { type: String, required: false }, // Verification code
   isVerified: { type: Boolean, default: false }, // Email verification status
   gender: { type: String, required: false },
@@ -74,12 +77,19 @@ app.post("/api/users", async (req, res) => {
       lastName,
       email,
       phone,
+      hasLaptop, 
+      motivationLetter, 
+      isCommitted
     } = req.body;
 
 
     // Validate email
     if (!validator.isEmail(email)) {
       return res.status(400).json({ message: "Invalid email address" });
+    }
+    
+    if (motivationLetter.split(" ").length < 150) {
+      return res.status(400).json({ message: "Motivation letter must be at least 150 words" });
     }
 
     const existingUser = await User.findOne({ email });
@@ -95,6 +105,9 @@ app.post("/api/users", async (req, res) => {
       lastName,
       email,
       phone,
+      hasLaptop, 
+      motivationLetter, 
+      isCommitted,
       verificationCode,
       admissionNumber,
     });
