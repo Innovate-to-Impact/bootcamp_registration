@@ -88,8 +88,8 @@ app.post("/api/users", async (req, res) => {
       return res.status(400).json({ message: "Invalid email address" });
     }
     
-    if (motivationLetter.split(" ").length < 150) {
-      return res.status(400).json({ message: "Motivation letter must be at least 150 words" });
+    if (motivationLetter.split(" ").length > 150) {
+      return res.status(400).json({ message: "Motivation letter must not be more than 150 words" });
     }
 
     const existingUser = await User.findOne({ email });
