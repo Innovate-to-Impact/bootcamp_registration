@@ -4,6 +4,9 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const validator = require("validator");
 const nodemailer = require("nodemailer");
+const XLSX = require("xlsx");
+const path = require("path");
+
 require("dotenv").config();
 
 const app = express();
@@ -24,7 +27,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   phone: { type: String, required: true },
   hasLaptop: { type: String, required: true, enum: ["Yes", "No"] },
-  motivationLetter: { type: String, required: true, minlength: 150 },
+  motivationLetter: { type: String, required: true, maxlength: 150 },
   isCommitted: { type: Boolean, required: true },
   verificationCode: { type: String, required: false }, // Verification code
   isVerified: { type: Boolean, default: false }, // Email verification status
@@ -40,6 +43,7 @@ const userSchema = new mongoose.Schema({
   city: { type: String, required: false },
   hearAboutUs: { type: String, required: false },
   admissionNumber: { type: String, required: false, unique: true },
+  status: { type: String, default: "Pending" }, 
 });
 
 // Model
@@ -77,8 +81,8 @@ app.post("/api/users", async (req, res) => {
       lastName,
       email,
       phone,
-      hasLaptop, 
-      motivationLetter, 
+      hasLaptop,
+      motivationLetter,
       isCommitted
     } = req.body;
 
@@ -87,7 +91,7 @@ app.post("/api/users", async (req, res) => {
     if (!validator.isEmail(email)) {
       return res.status(400).json({ message: "Invalid email address" });
     }
-    
+
     if (motivationLetter.split(" ").length > 150) {
       return res.status(400).json({ message: "Motivation letter must not be more than 150 words" });
     }
@@ -105,8 +109,8 @@ app.post("/api/users", async (req, res) => {
       lastName,
       email,
       phone,
-      hasLaptop, 
-      motivationLetter, 
+      hasLaptop,
+      motivationLetter,
       isCommitted,
       verificationCode,
       admissionNumber,
@@ -122,7 +126,7 @@ app.post("/api/users", async (req, res) => {
       text: `Your verification code is ${verificationCode}`,
     });
 
-    res.status(201).json({ message: "User registered. Verification code sent to email." });
+    res.status(201).json({ message: "User registered. Please check your email for your verification code." });
   } catch (error) {
     res.status(500).json({ message: "Error saving user", error });
   }
@@ -195,6 +199,80 @@ app.put("/api/users/details/:email", async (req, res) => {
     res.status(500).json({ message: "Error updating user details", error });
   }
 });
+
+// Fetch all registered users
+app.get('/api/registrations', async (req, res) => {
+  try {
+    const registrations = await User.find(); // Replace with your DB query
+    res.json(registrations);
+  } catch (error) {
+    res.status(500).send('Error fetching registrations');
+  }
+});
+
+// Route to generate and download Excel file
+app.post("/api/users/download", (req, res) => {
+  try {
+    const users = req.body.users;
+    if (!users || users.length === 0) {
+      return res.status(400).json({ message: "No users provided" });
+    }
+
+    const userData = users.map((user, index) => ({
+      Number: index + 1,
+      Name: `${user.firstName} ${user.lastName}`,
+      Email: user.email,
+      Phone: user.phone,
+      HasLaptop: user.hasLaptop,
+      Gender: user.gender,
+      Country: user.country,
+      State: user.state,
+      City: user.city,
+      ReliableInternetConnection: user.reliableInternetConnection,
+      AccessibilityNeeds: user.accessibilityNeeds,
+      IsStudentOrWorking: user.isStudentOrWorking,
+      HighestEducationLevel: user.highestEducationLevel,
+      TrackAppliedFor: user.trackAppliedFor,
+      AdmissionNumber: user.admissionNumber,
+      Status: user.status,
+    }));
+
+    const XLSX = require("xlsx");
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(userData);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    res.setHeader("Content-Disposition", "attachment; filename=users.xlsx");
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.send(buffer);
+  } catch (error) {
+    console.error("Error generating Excel file:", error);
+    res.status(500).json({ message: "Error generating Excel file", error });
+  }
+});
+
+
+// Update user status (approve/decline)
+app.put("/api/users/:id", async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { status: req.body.status },
+      { new: true }
+    );
+    res.status(200).json(user);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update user status" });
+  }
+});
+
+
+
 
 // Start Server
 const PORT = process.env.PORT || 5000;
