@@ -27,7 +27,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   phone: { type: String, required: true },
   hasLaptop: { type: String, required: true, enum: ["Yes", "No"] },
-  motivationLetter: { type: String, required: true, maxlength: 150 },
+  motivationLetter: { type: String, required: true },
   isCommitted: { type: Boolean, required: true },
   verificationCode: { type: String, required: false }, // Verification code
   isVerified: { type: Boolean, default: false }, // Email verification status
@@ -90,7 +90,7 @@ app.post("/api/users", async (req, res) => {
     // Validate email
     if (!validator.isEmail(email)) {
       return res.status(400).json({ message: "Invalid email address" });
-    }
+    }    
 
     if (motivationLetter.split(" ").length > 150) {
       return res.status(400).json({ message: "Motivation letter must not be more than 150 words" });
