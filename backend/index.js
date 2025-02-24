@@ -1,5 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
+const multer = require("multer");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const validator = require("validator");
@@ -10,6 +11,8 @@ const path = require("path");
 require("dotenv").config();
 
 const app = express();
+
+const upload = multer({ dest: "uploads/" });
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ limit: "1mb", extended: true }));
@@ -46,11 +49,24 @@ const userSchema = new mongoose.Schema({
   city: { type: String, required: false },
   hearAboutUs: { type: String, required: false },
   admissionNumber: { type: String, required: false, unique: true },
-  status: { type: String, default: "Pending" }, 
+  status: { type: String, default: "Pending" },
+});
+
+const EmailLogSchema = new mongoose.Schema({
+  name: String,
+  email: String,
+  code: String,
+  status: String,
+  timestamp: { type: Date, default: Date.now }
 });
 
 // Model
 const User = mongoose.model("User", userSchema);
+
+const EmailLog = mongoose.model("EmailLog", EmailLogSchema);
+
+let clients = [];
+let progress = { sentCount: 0, totalEmails: 0 };
 
 // Nodemailer Transporter
 const transporter = nodemailer.createTransport({
@@ -93,7 +109,7 @@ app.post("/api/users", async (req, res) => {
     // Validate email
     if (!validator.isEmail(email)) {
       return res.status(400).json({ message: "Invalid email address" });
-    }    
+    }
 
     if (motivationLetter.split(" ").length > 150) {
       return res.status(400).json({ message: "Motivation letter must not be more than 150 words" });
@@ -242,7 +258,6 @@ app.post("/api/users/download", (req, res) => {
       Status: user.status,
     }));
 
-    const XLSX = require("xlsx");
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.json_to_sheet(userData);
     XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
@@ -276,7 +291,165 @@ app.put("/api/users/:id", async (req, res) => {
   }
 });
 
+// Function to send email with retry
+const sendEmailWithRetry = async (user, delay, retries = 3) => {
+  return new Promise((resolve) => {
+    setTimeout(async () => {
+      const mailOptions = {
+        from: `"Innovate to Impact" <${process.env.EMAIL_USER}>`,
+        to: user.Email,
+        subject: 'Congratulations! Next Steps for Innovate to Impact 2025 Bootcamp - Screening Test & Special Event',
+        html: `
+            <p>Dear <strong>${user.Name}</strong>,</p>
+    
+            <p>Congratulations!</p>
+    
+            <p>We are delighted to inform you that your application for the Innovate to Impact Bootcamp 2025 first cohort has been successful, and you have been selected to move forward to the screening phase!</p>
+    
+            <h3>Special Event Announcement:</h3>
+            <p>Mark your calendar for <strong>February 28th, 2025</strong>! We've planned a special event just for you. Be sure to register and come prepared with your questions, as our guest is ready to equip you with everything you need to kickstart your journey in the tech industry. Don't miss out!</p>
+    
+            <p>Find the registration link here: <a href="https://www.classmarker.com/register/?trk=home-try-free" target="_blank">Click here to register</a></p>
+    
+            <h3>Screening Test Details:</h3>
+            <p><strong>Test Duration:</strong><br>
+            February 24th - February 26th, 2025</p>
+    
+            <p>Please note that you must complete the test within this timeframe. No extensions will be granted.</p>
+    
+            <h3>Registration Instructions:</h3>
+            <ol>
+                <li>Visit <a href="https://www.classmarker.com/register/?trk=home-try-free" target="_blank">ClassMarker.com</a></li>
+                <li>Click on "Try It For Free"</li>
+                <li>Select "Register to Take Test"</li>
+                <li>Enter your Registration Code: <strong>${user.Code}</strong></li>
+                <li>Complete your profile using the same email address you used in your initial application</li>
+            </ol>
+    
+            <h3>Important Test Information:</h3>
+            <ul>
+                <li><strong>Duration:</strong> 30 minutes</li>
+                <li><strong>Passing Score:</strong> 90%</li>
+                <li>The test must be completed in one sitting - you cannot pause and return later</li>
+                <li>Your registration code can only be used once</li>
+                <li>Make sure to submit your test before closing your browser tab</li>
+                <li>Ensure you have a stable internet connection before starting</li>
+            </ul>
+    
+            <p>Please note that this is a crucial phase of the selection process. We recommend finding a quiet space and setting aside dedicated time to complete the assessment without interruptions.</p>
+    
+            <h3>Stay connected with us on social media:</h3>
+            <p>
+                📌 Instagram: <a href="https://www.instagram.com/innovatetoimpact_">@innovatetoimpact_</a><br>
+                📌 LinkedIn: <a href="https://www.linkedin.com/company/innovate-to-impact">Innovate to Impact</a><br>
+                📌 X (Twitter): <a href="https://twitter.com/Innovate2impact">@Innovate2impact</a><br>
+                📌 YouTube: <a href="https://www.youtube.com/@Innovatetoimpact">Innovatetoimpact</a><br>
+                📌 TikTok: <a href="https://www.tiktok.com/@Innovatetoimpact">Innovatetoimpact</a>
+            </p>
+    
+            <p>We wish you the best of luck with your screening test!</p>
+    
+            <p>Best regards,<br>
+            <strong>The Innovate to Impact Team</strong></p>
+    
+            <p><strong>Note:</strong> If you experience any technical difficulties during the test, please contact our support team immediately at <a href="mailto:innovatetoimpactglobal@gmail.com">innovatetoimpactglobal@gmail.com</a></p>
+        `
+      };
 
+
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          await transporter.sendMail(mailOptions);
+          console.log(`✅ Email sent to ${user.Email}`);
+
+          await EmailLog.create({ name: user.Name, email: user.Email, code: user.Code, status: "sent" });
+          resolve({ email: user.Email, status: "sent" });
+          return;
+        } catch (error) {
+          console.error(`❌ Error sending email to ${user.Email} (Attempt ${attempt}):`, error);
+          if (attempt === retries) {
+            await EmailLog.create({ name: user.Name, email: user.Email, code: user.Code, status: "failed" });
+            resolve({ email: user.Email, status: "failed" });
+          }
+        }
+      }
+    }, delay);
+  });
+};
+
+
+// API to get failed emails
+app.get("/failed-emails", async (req, res) => {
+  try {
+    const failedEmails = await EmailLog.find({ status: "failed" });
+    res.json(failedEmails);
+  } catch (error) {
+    console.error("Error fetching failed emails:", error);
+    res.status(500).json({ message: "Error fetching data" });
+  }
+});
+
+// API to retry failed emails
+app.post("/retry-failed", async (req, res) => {
+  try {
+    const failedEmails = await EmailLog.find({ status: "failed" });
+
+    for (let user of failedEmails) {
+      await sendEmailWithRetry(user, 3000);
+    }
+
+    res.json({ message: "Retry process started!" });
+  } catch (error) {
+    console.error("Error retrying failed emails:", error);
+    res.status(500).json({ message: "Error retrying emails" });
+  }
+});
+
+
+// SSE Endpoint to send progress updates
+app.get("/progress", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  clients.push(res);
+
+  req.on("close", () => {
+    clients = clients.filter(client => client !== res);
+  });
+});
+
+// Function to send updates to clients
+const sendProgressUpdate = () => {
+  const data = `data: ${JSON.stringify(progress)}\n\n`;
+  clients.forEach(client => client.write(data));
+};
+
+// File Upload and Email Sending Route
+app.post("/upload", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+    const workbook = XLSX.readFile(req.file.path);
+    const sheetName = workbook.SheetNames[0];
+    const users = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    progress = { sentCount: 0, totalEmails: users.length };
+
+    for (let i = 0; i < users.length; i++) {
+      await sendEmailWithRetry(users[i], 3000);
+      progress.sentCount++;
+
+      sendProgressUpdate();
+    }
+
+    res.json({ message: `${progress.totalEmails} emails have been sent!` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error processing file" });
+  }
+});
 
 
 // Start Server
