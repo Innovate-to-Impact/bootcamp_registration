@@ -313,7 +313,7 @@ const sendEmailWithRetry = async (user, delay, retries = 3) => {
     
             <h3>Screening Test Details:</h3>
             <p><strong>Test Duration:</strong><br>
-            February 24th - February 26th, 2025</p>
+            February 25th - February 27th, 2025</p>
     
             <p>Please note that you must complete the test within this timeframe. No extensions will be granted.</p>
     
